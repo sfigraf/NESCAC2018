@@ -1,8 +1,12 @@
+library(dendextend)
+library(rpart)
+library(tidyverse)
+#selecting files from 2018 nescac data
 batting.team <- read_csv(file.choose())
 batting.ind <- read_csv(file.choose())
 pitching.ind <- read_csv(file.choose())
 pitching.team <- read_csv(file.choose())
-batting.team.2019 <- read_csv(file.choose())
+#batting.team.2019 <- read_csv(file.choose())
 
 
 #get team stats so that it contains wins and losses
@@ -390,6 +394,7 @@ cluster <- cutree(hc1,
 rect.hclust(hc1,
             k = 8,
             border = 1:3)
+?hclust
 #no surprise here now that this is a rate stat
 #grouings are fairly distinct
 #can also label by pos to see INF vs outfield
