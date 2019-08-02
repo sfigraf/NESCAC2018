@@ -1,0 +1,326 @@
+---
+title: "Division 3 Baseball Data and NESCAC Accolades"
+author: "SamG"
+date: "May 19, 2019"
+output: html_document
+---
+My dataset examines baseball data for Division 3 baseball players. Unlike data from MLB or even Division 1, this type of data is rarely looked at, mostly because not many people particularly care about division 3 because the level of play isn't as high. 
+For the first part of this project, we're looking at variables that would correlate to winning.
+```{r, include = FALSE}
+library(tidyverse)
+library(stringr)
+library(data.table)
+library(ggplot2)
+library(dendextend)
+library(randomForest)
+
+batting.team <- read_csv("Batting.team.csv")
+batting.ind <- read_csv("Batting.ind.csv")
+pitching.ind <- read_csv("pitching.ind.csv")
+pitching.team <- read_csv("Pitching.team.csv")
+#get team stats so that it contains wins and losses
+pitching.ind.3 <- pitching.ind %>%
+  group_by(team) %>%
+  summarize(total.wins = sum(w),
+         total.losses = sum(l))
+
+#team stats with records
+pitching.team4 <- left_join(pitching.team,
+                            pitching.ind.3,
+                            by = "team")
+pitching.team4 <- pitching.team4 %>%
+  mutate(win.perc = total.wins/(total.wins+total.losses))
+#individual stats with team record
+pitching.ind1 <- left_join(pitching.ind,
+                            pitching.ind.3,
+                            by = "team")
+
+
+#team hitting stats with record
+batting.team1 <- left_join(batting.team,
+                           pitching.ind.3,
+                           by = "team")
+batting.team1 <- batting.team1 %>%
+  mutate(win.perc = total.wins/(total.wins+total.losses))
+#individual stats with team record
+batting.ind1 <- left_join(batting.ind,
+                           pitching.ind.3,
+                           by = "team")
+```
+We have both offense and pitching to look at. First, let's look at offense. For starters, let's look at a stat called runs created (rc) The basic formula is base hits plus walks, multiplied by total bases; the result is then divided by at bats plus walks. So it's an aggregate stat that is a good measure of the offense that a team is producing. 
+```{r, include = FALSE}
+model1 <- lm(win.perc ~ rc,
+             data = batting.team1)
+model1
+model1$coefficients #intercept and slope
+
+
+```
+
+```{r, echo = FALSE}
+batting.team1 %>%
+  ggplot(aes(x = rc,
+             y = win.perc)) +
+  geom_point() +
+  geom_abline(slope = .0021, 
+              intercept = .0537,
+              color = "red",
+              size = 3) +
+  xlab("Runs Created") +
+  ylab("Winning Percentage")
+```
+We can also use this info to predict how a team would fare, given a certain amount of runs created.
+```{r, echo = FALSE}
+#what's the predicted wining percentage for a team with 200 runs created
+predict.lm(model1,
+           data.frame(rc = 200))
+```
+So a team with 200 wins created would expect to have a winning percentage of .476.
+
+What other variables would we expect to correlate with winning percentage? We can do a stepwise regression to try and help.
+```{r, include = FALSE}
+#all
+#remove.categoricalvariables
+bat.team2 <- batting.team1 %>%
+  select(-team,
+         -conference,
+         -total.wins,
+         -total.losses)
+model2 <- lm(win.perc ~ .,
+             data = bat.team2)
+step(model2)
+```
+
+The final model enlists about 15 variables, with the five variables with the lowest AIC value are obp, sacrrifice flies, batting average on balls hit in play (babip), weighted on base percentage (woba), and runs. Of these, sacrifice flies are the most surprising; however, in order to achieve them, you need to already have a man on third, and each time you get a sacrifice flh, that means a run. So in this way, the sacrifice fly is very similar to the runs statistic.
+What do some of their graphs look like? 
+
+```{r, echo = FALSE}
+batting.team1 %>%
+  ggplot(aes(x = obp,
+             y = win.perc)) +
+  geom_point() +
+  ylab("Winning Percentage")
+
+batting.team1 %>%
+  ggplot(aes(x = babip,
+             y = win.perc)) +
+  geom_point() +
+  ylab("Winning Percentage")
+```
+
+Pretty positive correlation. 
+
+
+
+What sort of variables correlate to wins for pitching?
+```{r, include = FALSE}
+#all
+#remove.categoricalvariables
+pitch.team2 <- pitching.team4 %>%
+  select(-team,
+         -conference,
+         -total.wins,
+         -total.losses)
+model2 <- lm(win.perc ~ .,
+             data = pitch.team2)
+step(model2)
+```
+Here, some interesting variables jump out, with the top five being runs, BABIP, batters faced (bf), sacrifice hits (sh), and obp. As a pitcher, it is their responsibility to limit these, so the more succesful teams have pitchers who are good at limiting these. 
+
+```{r, echo = FALSE}
+pitch.team2 %>%
+  ggplot(aes(x = babip,
+             y = win.perc)) +
+  geom_point() +
+  ylab("Winning Percentage")
+```
+
+
+```{r, echo = FALSE}
+pitch.team2 %>%
+  ggplot(aes(x = r,
+             y = win.perc)) +
+  geom_point() +
+  ylab("Winning Percentage")
+pitch.team2 %>%
+  ggplot(aes(x = obp,
+             y = win.perc)) +
+  geom_point() +
+  ylab("Winning Percentage")
+```
+
+These are variables that make sense in terms of correlation; don't allow walks and hits (especially not hits for extra bases) and there's a better chance of winning the game. 
+
+Interestingly, both with hitters and pitchers, the number of strikeouts did not make it into the final equations. One potential iinterpretation of this, coupled with the high correlation of BABIP is that as a hitter, if you are still frequently getting on base, it doesn't really matter how your outs happen, whether that is a strikeout or weak contact. If you are still getting on base by walking and getting hits on the balls you hit in play, then the team will have success. To take this interpretation a step further, in order to get more hits on balls hit in play, you need to hit the ball hard at an optimal launch angle off the bat (for instance: a line drive between 5° and 15°). 
+
+For pitchers. the goal is to get weak contact, even more so than strikeouts, if this model is to be believed. This of course is on top of "don't allow runs" and "don't let runners on base". Pretty groundbreaking stuff. 
+
+
+The next part of the analysis is to see which players are contributing to successful teams, and try and rank these players into tiers. The more talented players can also be cross checked with All-league teams to see if these standard of evaluation come up with any different all-leagu eplayers than the committee. For my own interest, I'm giong to examine NESCAC 2018 data and first and second team selections. First I'll look at hitters with more than 20 at bats, so that we start to eliminate the small sample sizes.
+
+```{r, echo = FALSE}
+###nescac
+nescac <- batting.ind %>%
+  filter(conference == "NESCAC",
+         ab > 20)
+#scale the data
+nescac.scaled <- scale(nescac %>%
+                             select(-name, 
+                                    -`split`,
+                                    -`class`,
+                                    -no,
+                                    -team,
+                                    -conference,
+                                    -pos))
+
+distance.matrix <- dist(nescac.scaled)
+
+hc1 <- hclust(distance.matrix)
+
+```
+
+We can start to break the hitters into groupings.7 groupings were chosen here. 
+```{r, echo = FALSE}
+plot(hc1)
+cluster <- cutree(hc1, 
+       k = 7)
+#rectangels around them
+rect.hclust(hc1,
+            k = 7,
+            border = 1:3)
+```
+
+What makes some hitters similar and others different? Let's look at variables that make successful teams and look at them with individual hitters.
+
+```{r, echo = FALSE}
+nescac %>%
+  mutate(cluster = cluster) %>%
+  ggplot(aes(x = ab,
+             y = obp)) +
+  geom_jitter(aes(color = factor(cluster)),
+              size = 3) 
+
+```
+
+Seems like the best players are in clusters 4, 6,7. 
+
+```{r, echo = FALSE}
+nescac %>%
+  mutate(cluster = cluster) %>%
+  filter(cluster == 4 |
+         cluster == 6 |
+         cluster == 7) %>%
+  ggplot(aes(x = ab,
+             y = obp)) +
+  geom_jitter(aes(color = factor(cluster)),
+              size = 3) +
+  geom_text(aes(label = name))
+```
+
+
+Let's check if that makes sense. Do any of our all nescac selections (first or second team) fall into this category?
+
+```{r, include = FALSE}
+nescac.top.hitters <- nescac %>%
+  mutate(cluster = cluster) %>%
+  filter(cluster == 4 |
+           cluster == 6 |
+           cluster == 7)
+
+all.nescac2018 <- read_csv("all.nescac2018.csv")
+all.nescac <- all.nescac2018 %>%
+  filter(Position != "P") 
+#joined together
+colnames(all.nescac)[2] <- "name"
+all.nescac.joined <- left_join(nescac.top.hitters,
+                               all.nescac,
+                               by = "name") 
+```
+```{r, echo = FALSE}
+all.nescac.joined %>%
+  mutate(win.all.nescac = !is.na(Institution)) %>%
+  select(name,
+         pos,
+         cluster,
+         win.all.nescac)
+```
+
+Of all the 17 hitters in clusters 4, 6, and 7, only four didn't win an award. This is with a total of 18 position players selected for all-nescac.  
+
+So why didn't some of these players win an award, if they were such good hitters? A few reasons come to mind. The first is that the position that they play could be a factor. Each position should get at least a couple representatives, and so there might be positions where the hitting isn't as good, but they still need representation. 
+```{r, include = FALSE}
+all.nescac.joined2 <- left_join(nescac,
+                                all.nescac,
+                                by = "name")
+
+```
+```{r, echo = FALSE}
+all.nescac.joined2 %>%
+  mutate(win.all.nescac = !is.na(Institution)) %>%
+  filter(win.all.nescac == TRUE) %>%
+  select(name,
+         pos,
+         cluster,
+         win.all.nescac)
+```
+
+Of the players not in the top hitting clusters, 2 were catchers. Catchers are more coveted for their defense than offense, and so it makes sense that their defense is probably a large part of their selection. The other two players not in the top hitting clusters were outfielders. Of the four players in better hitting groups that didn't win an award, three were infielders. Since all infielders were in the top tier hitting groups, I don't feel that badly about the all-nescac omissions of the three infielders. Their decisions could have gone either way, assuming that they have very similar defensive numbers as well. So these players didn't exactly get snubbed, they just got unlucky. 
+However, the fourth hitter in this group of omissions IS an outfielder: Matt Jeye. I don't know who this guy is personally, but if I were to see him, I would tell him that he got snubbed. Assuming that defensively, he played a very average outfield, his offense should have put him above the other two outfielders for an All-NEscac selection. 
+
+
+
+Now that we've got the hitters, we can also use our team data to try and predict what would happen if all the all-nescac selections were all on the same team to form a superteam. 
+Using the top five hitting variables that contribute to success according to our model (sacrifice flies, runs, obp, woba, babip) with winning percentage yields a variety of predicted winning percentages for the all-nescac hitters. Since sacrifice flies and runs are an aggregated stat, however, it would be more realistic for this model to just use the rate stats.  
+```{r, include = FALSE}
+predicted.hitting <- matrix(c(.79,.65,.78),ncol=3,byrow=TRUE)
+colnames(predicted.hitting) <- c("OBP","BABIP", "WOBA")
+rownames(predicted.hitting) <- c("Predicted Winning Percentage")
+```
+```{r, echo = FALSE}
+as.table(predicted.hitting)
+
+```
+We can do the same for the pitchers. Although there were only 4 pitchers selected to an all-nescac team, we can see what winning percentage they'ed generate. Agai, we'll use just the rate stats, which in this case were just OBP and babip.
+
+```{r, include=FALSE}
+#preditcted pitching
+
+award.pitchers <- all.nescac2018 %>%
+  filter(Position == "P")
+
+
+#looking at all pitchers now
+all.pitchers.joined <- left_join(pitching.ind1,
+                                award.pitchers,
+                                by = "name")
+all.pitchers.joined2 <- all.pitchers.joined %>%
+       mutate(win.all.nescac = !is.na(Institution)) %>%
+       arrange(-win.all.nescac)
+award.pitchers.stats <- all.pitchers.joined2 %>%
+  filter(win.all.nescac == TRUE)
+
+#runs: 
+#babip: .77
+#bf
+#sh
+#obp: .85
+model3 <- lm(win.perc ~ obp,
+             data = pitching.team4)
+award.pitchers.stats %>%
+  summarise(stat = mean(obp))
+predict.lm(model3,
+           data.frame(obp = .279))
+predicted.pitching <- matrix(c(.85,.77),ncol=2,byrow=TRUE)
+colnames(predicted.pitching) <- c("OBP","BABIP")
+rownames(predicted.pitching) <- c("Predicted Winning Percentage")
+```
+
+```{r, echo = FALSE}
+as.table(predicted.pitching)
+```
+Averaging all these predicted percentages out, you get an average of .77. 
+
+##In conclusion
+There are a lot of variables that are used to predict both offense team success and pitching team success. On offense, the five most important ones according to this study's regression were obp (on base percentage), sacrifice flies, batting average on balls hit in play (babip), weighted on base percentage (woba), and runs. For pitching, those variables were runs, BABIP, batters faced (bf), sacrifice hits (sh), and obp. Interestingly, strikouets weren't involved in either model, maybe warranting further investigation into the question of "Is it better to make weak contact in play, or better to swing harder, potentially sacfricing contact for power at the risk of striking out?"
+
+Regarding All -Nescac selections in 2018, I feel badly for Matt Jeye because he got screwed. He was a substantially better hitting outfielder (as measured by success-correlated metrics predicted in this study's regression) than the two outfielders who recieved accolades over him. Lastly, if we put all the ALL-Nescac players on a team together, we'd predict them to win almost 8 out of every 10 games. Thank you for reading. 
